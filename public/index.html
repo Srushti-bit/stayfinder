@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>StayFinder – Find a PG near you</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+</head><body>
+<header class="nav" id="nav"></header>
+<section class="hero"><div class="wrap">
+  <h1>Find a PG where you can actually settle in</h1>
+  <p>Compare rent, sharing type, meals and reviews from real tenants, then request a bed directly from the owner.</p>
+  <form class="searchbar" id="heroSearch" role="search">
+    <input id="q" type="search" placeholder="Search by area, city or PG name" aria-label="Search PGs">
+    <button class="btn gold" type="submit">Search</button>
+  </form>
+  <button class="recbtn" id="recToggle" type="button" aria-expanded="false" aria-controls="recPanel">Not sure where to start? Get matched to the best PGs for you</button>
+</div></section>
+
+<main class="wrap browse">
+  <aside class="panel filters" aria-label="Filters"><form id="filters">
+    <h3>Filters</h3>
+    <div class="group field"><label for="city">City</label><input id="city" name="city" placeholder="e.g. Nagpur"></div>
+    <div class="group"><label>Monthly rent (₹)</label>
+      <div class="row"><input name="minRent" type="number" min="0" placeholder="Min" aria-label="Minimum rent"><input name="maxRent" type="number" min="0" placeholder="Max" aria-label="Maximum rent"></div></div>
+    <div class="group field"><label for="gender">Stay type</label>
+      <select id="gender" name="gender"><option value="">Any</option><option value="boys">Boys</option><option value="girls">Girls</option></select></div>
+    <div class="group field"><label for="sharing">Sharing</label>
+      <select id="sharing" name="sharing"><option value="">Any</option><option value="1">Private (1)</option><option value="2">2-sharing</option><option value="3">3-sharing</option><option value="4">4-sharing</option></select></div>
+    <div class="group"><label>Amenities</label><div id="amen"></div></div>
+    <div class="group"><label class="check"><input type="checkbox" name="availableOnly" value="true"> Only show PGs with free beds</label></div>
+    <button type="reset" class="btn ghost sm" id="reset">Clear filters</button>
+  </form></aside>
+
+  <section id="resultsCol">
+    <div class="panel recpanel" id="recPanel" hidden>
+      <h3>Tell us what you need</h3>
+      <form id="recForm">
+        <div class="row">
+          <div class="field"><label for="rbudget">Monthly budget (₹)</label><input id="rbudget" name="budget" type="number" min="1" required placeholder="e.g. 7000"></div>
+          <div class="field"><label for="rcity">City</label><input id="rcity" name="city" placeholder="Optional"></div>
+          <div class="field"><label for="rgender">Stay type</label><select id="rgender" name="gender"><option value="">Any</option><option value="boys">Boys</option><option value="girls">Girls</option></select></div>
+          <div class="field"><label for="rsharing">Sharing</label><select id="rsharing" name="sharing"><option value="">No preference</option><option value="1">Private</option><option value="2">2-sharing</option><option value="3">3-sharing</option><option value="4">4-sharing</option></select></div>
+        </div>
+        <div class="field"><label>Must-have amenities</label><div class="chips" id="ramen"></div></div>
+        <button class="btn gold">Show my best matches</button>
+        <button class="btn ghost" type="button" id="recClose">Back to all PGs</button>
+      </form>
+    </div>
+    <div class="results-head"><strong id="count">Loading…</strong>
+      <select id="sort" aria-label="Sort results"><option value="newest">Newest first</option><option value="rentAsc">Rent: low to high</option><option value="rentDesc">Rent: high to low</option><option value="rating">Top rated</option></select></div>
+    <div class="grid" id="grid"></div>
+  </section>
+</main>
+<footer>StayFinder · Find it. Visit it. Move in.</footer>
+
+<script src="/js/api.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+$('amen').innerHTML = AMENITIES.map((a) => `<label class="check"><input type="checkbox" name="amenity" value="${a}"> ${a}</label>`).join('');
+
+function params() {
+  const p = new URLSearchParams();
+  const fd = new FormData($('filters'));
+  for (const k of ['city', 'minRent', 'maxRent', 'gender', 'sharing', 'availableOnly']) if (fd.get(k)) p.set(k, fd.get(k));
+  const am = fd.getAll('amenity'); if (am.length) p.set('amenities', am.join(','));
+  if ($('q').value.trim()) p.set('q', $('q').value.trim());
+  p.set('sort', $('sort').value);
+  return p;
+}
+
+let all = [], shown = 24;
+function paint() {
+  $('grid').innerHTML = all.length
+    ? all.slice(0, shown).map(pgCard).join('') + (all.length > shown ? `<div style="grid-column:1/-1;text-align:center"><button class="btn ghost" id="more">Show more (${all.length - shown} more)</button></div>` : '')
+    : '<div class="empty" style="grid-column:1/-1"><h3>No PGs match these filters</h3><p>Try a wider rent range or clear some amenities.</p></div>';
+}
+$('grid').addEventListener('click', (e) => { if (e.target.id === 'more') { shown += 24; paint(); } });
+
+async function load() {
+  $('count').textContent = 'Searching…';
+  try {
+    all = await api('/pgs?' + params()); shown = 24;
+    $('count').textContent = all.length + (all.length === 1 ? ' PG found' : ' PGs found');
+    paint();
+  } catch (e) { $('count').textContent = 'Could not load listings'; toast(e.message, true); }
+}
+
+let t; const later = () => { clearTimeout(t); t = setTimeout(load, 300); };
+$('filters').addEventListener('input', later);
+$('filters').addEventListener('reset', () => setTimeout(load, 0));
+$('sort').addEventListener('change', load);
+$('heroSearch').addEventListener('submit', (e) => { e.preventDefault(); load(); });
+load();
+
+/* ---- Recommendations ---- */
+$('ramen').innerHTML = AMENITIES.map((a) => `<label class="check"><input type="checkbox" name="ramenity" value="${a}"> ${a}</label>`).join('');
+const recCard = (r) => `<div class="recwrap"><span class="score">${r.score}% match</span>${pgCard(r.pg)}
+  <ul class="why">${r.reasons.map((x) => `<li class="${/^(Missing|.*over your budget|No reviews|Only )/.test(x) ? 'bad' : ''}">${esc(x)}</li>`).join('')}</ul></div>`;
+
+function showRec(on) {
+  $('recPanel').hidden = !on;
+  $('recToggle').setAttribute('aria-expanded', on);
+  $('resultsCol').classList.toggle('has-rec', on);
+  if (on) $('rbudget').focus(); else load();
+}
+$('recToggle').onclick = () => showRec($('recPanel').hidden);
+$('recClose').onclick = () => showRec(false);
+$('recForm').onsubmit = async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target), p = new URLSearchParams();
+  for (const k of ['budget', 'city', 'gender', 'sharing']) if (fd.get(k)) p.set(k, fd.get(k));
+  const am = fd.getAll('ramenity'); if (am.length) p.set('amenities', am.join(','));
+  $('count').textContent = 'Finding your best matches…';
+  try {
+    const list = await api('/recommend?' + p);
+    $('count').textContent = list.length ? `Top ${list.length} matches for you` : 'No PGs match these needs';
+    $('grid').innerHTML = list.length ? list.map(recCard).join('')
+      : '<div class="empty" style="grid-column:1/-1"><h3>Nothing available for these needs</h3><p>Try a different city or stay type, or raise your budget.</p></div>';
+  } catch (er) { toast(er.message, true); }
+};
+</script></body></html>

@@ -1,0 +1,90 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css"><title>PG details – StayFinder</title></head><body>
+<header class="nav" id="nav"></header>
+<main class="wrap" id="root"><p class="muted" style="padding:40px 0">Loading…</p></main>
+<footer>StayFinder · Find it. Visit it. Move in.</footer>
+<script src="/js/api.js"></script>
+<script>
+const id = new URLSearchParams(location.search).get('id');
+const root = document.getElementById('root');
+const user = Auth.user();
+
+async function load() {
+  try {
+    const { pg, reviews } = await api('/pgs/' + id);
+    document.title = pg.name + ' – StayFinder';
+    const imgs = pg.images.length ? pg.images : [PLACEHOLDER];
+    const mine = reviews.find((r) => user && r.user && r.user._id === user.id);
+    root.innerHTML = `
+    <div class="detail">
+      <div>
+        <div class="gallery">
+          <img class="main" id="main" src="${esc(imgs[0])}" alt="${esc(pg.name)}">
+          ${imgs.length > 1 ? '<div class="thumbs">' + imgs.map((s, i) => `<img src="${esc(s)}" alt="Photo ${i + 1}" class="${i ? '' : 'on'}" data-src="${esc(s)}">`).join('') + '</div>' : ''}
+        </div>
+        <h1 style="margin-top:20px">${esc(pg.name)}</h1>
+        <div class="muted">${esc(pg.address || '')} ${esc(pg.area)}, ${esc(pg.city)}</div>
+        <div class="facts">
+          <div><span class="muted">Rent</span><b>${money(pg.rent)}/mo</b></div>
+          <div><span class="muted">Deposit</span><b>${money(pg.deposit)}</b></div>
+          <div><span class="muted">Stay type</span><b style="text-transform:capitalize">${esc(pg.gender)}</b></div>
+          <div><span class="muted">Sharing</span><b>${pg.sharing === 1 ? 'Private' : pg.sharing + '-sharing'}</b></div>
+          <div><span class="muted">Beds free</span><b>${pg.availableBeds} of ${pg.totalBeds}</b></div>
+          <div><span class="muted">Rating</span><b>${pg.reviewCount ? pg.avgRating + ' / 5' : 'None yet'}</b></div>
+        </div>
+        ${pg.description ? '<h3>About this PG</h3><p>' + esc(pg.description).replace(/\n/g, '<br>') + '</p>' : ''}
+        ${pg.amenities.length ? '<h3>Amenities</h3><div class="tags">' + pg.amenities.map((a) => '<span class="tag">' + esc(a) + '</span>').join('') + '</div>' : ''}
+        ${pg.rules ? '<h3 style="margin-top:20px">House rules</h3><p>' + esc(pg.rules).replace(/\n/g, '<br>') + '</p>' : ''}
+
+        <h3 style="margin-top:28px">Reviews (${reviews.length})</h3>
+        ${user && user.role === 'tenant' ? `<form id="rform" class="panel" style="margin-bottom:12px">
+          <label>${mine ? 'Update your review' : 'Rate your stay'}</label>
+          <div class="field"><select name="rating" required><option value="">Choose rating</option>${[5,4,3,2,1].map((n) => '<option value="' + n + '"' + (mine && mine.rating === n ? ' selected' : '') + '>' + stars(n) + ' (' + n + ')</option>').join('')}</select></div>
+          <div class="field"><textarea name="comment" rows="3" placeholder="Food, cleanliness, owner behaviour…">${esc(mine ? mine.comment : '')}</textarea></div>
+          <button class="btn sm">Save review</button></form>` : ''}
+        ${reviews.length ? reviews.map((r) => `<div class="review"><b>${esc(r.user ? r.user.name : 'Tenant')}</b> <span class="rating">${stars(r.rating)}</span><p style="margin:4px 0 0">${esc(r.comment || '')}</p></div>`).join('') : '<p class="muted">No reviews yet.</p>'}
+      </div>
+
+      <aside class="side panel">
+        <div class="price" style="font-size:1.5rem">${money(pg.rent)}<small> /month</small></div>
+        <p class="muted">Listed by ${esc(pg.owner ? pg.owner.name : 'owner')}</p>
+        ${pg.contactPhone ? '<p>Call: <a href="tel:' + esc(pg.contactPhone) + '"><b>' + esc(pg.contactPhone) + '</b></a></p>' : ''}
+        ${bookingBox(pg)}
+      </aside>
+    </div>`;
+    document.querySelectorAll('.thumbs img').forEach((t) => t.onclick = () => {
+      document.getElementById('main').src = t.dataset.src;
+      document.querySelectorAll('.thumbs img').forEach((x) => x.classList.toggle('on', x === t));
+    });
+    const bf = document.getElementById('bform');
+    if (bf) bf.onsubmit = async (e) => {
+      e.preventDefault(); const b = bf.querySelector('button'); b.disabled = true;
+      try {
+        await api('/bookings', { method: 'POST', body: { pg: pg._id, moveInDate: bf.moveInDate.value, message: bf.message.value } });
+        toast('Request sent. The owner will respond from their dashboard.');
+        bf.reset();
+      } catch (er) { toast(er.message, true); }
+      b.disabled = false;
+    };
+    const rf = document.getElementById('rform');
+    if (rf) rf.onsubmit = async (e) => {
+      e.preventDefault();
+      try { await api('/pgs/' + pg._id + '/reviews', { method: 'POST', body: { rating: +rf.rating.value, comment: rf.comment.value } }); toast('Review saved'); load(); }
+      catch (er) { toast(er.message, true); }
+    };
+  } catch (e) { root.innerHTML = '<div class="empty" style="margin:40px 0"><h3>' + esc(e.message) + '</h3><a href="/">Back to listings</a></div>'; }
+}
+
+function bookingBox(pg) {
+  if (!user) return '<a class="btn gold" href="/login.html">Log in to request a bed</a>';
+  if (user.role !== 'tenant') return '<p class="muted">Only tenant accounts can request beds.</p>';
+  if (pg.availableBeds < 1) return '<span class="tag full">No beds available right now</span>';
+  const today = new Date().toISOString().split('T')[0];
+  return `<form id="bform"><div class="field"><label for="md">Move-in date</label><input id="md" name="moveInDate" type="date" min="${today}" required></div>
+    <div class="field"><label for="msg">Message to owner (optional)</label><textarea id="msg" name="message" rows="3" placeholder="When can I visit? Any questions?"></textarea></div>
+    <button class="btn gold" style="width:100%">Request a bed</button></form>`;
+}
+load();
+</script></body></html>

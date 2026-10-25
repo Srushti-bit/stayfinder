@@ -1,0 +1,42 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css"><title>Log in – StayFinder</title></head><body>
+<header class="nav" id="nav"></header>
+<main class="wrap"><div class="auth panel">
+  <div class="tabs" role="tablist"><button id="tLogin" class="on" role="tab">Log in</button><button id="tReg" role="tab">Create account</button></div>
+  <form id="login">
+    <div class="field"><label for="le">Email</label><input id="le" name="email" type="email" required autocomplete="email"></div>
+    <div class="field"><label for="lp">Password</label><input id="lp" name="password" type="password" required autocomplete="current-password"></div>
+    <button class="btn" style="width:100%">Log in</button>
+  </form>
+  <form id="reg" hidden>
+    <div class="field"><label>I am a</label><div class="chips">
+      <label class="check"><input type="radio" name="role" value="tenant" checked> Tenant looking for a PG</label>
+      <label class="check"><input type="radio" name="role" value="owner"> PG owner</label></div></div>
+    <div class="field"><label for="rn">Full name</label><input id="rn" name="name" required autocomplete="name"></div>
+    <div class="field"><label for="re">Email</label><input id="re" name="email" type="email" required autocomplete="email"></div>
+    <div class="field"><label for="rph">Phone</label><input id="rph" name="phone" type="tel" autocomplete="tel"></div>
+    <div class="field"><label for="rp">Password (min. 6 characters)</label><input id="rp" name="password" type="password" minlength="6" required autocomplete="new-password"></div>
+    <button class="btn" style="width:100%">Create account</button>
+  </form>
+</div></main>
+<script src="/js/api.js"></script>
+<script>
+const $ = (i) => document.getElementById(i);
+function tab(reg) { $('login').hidden = reg; $('reg').hidden = !reg; $('tLogin').classList.toggle('on', !reg); $('tReg').classList.toggle('on', reg); }
+$('tLogin').onclick = () => tab(false); $('tReg').onclick = () => tab(true);
+if (new URLSearchParams(location.search).get('tab') === 'register') tab(true);
+
+async function submit(form, path) {
+  const btn = form.querySelector('button.btn'); btn.disabled = true;
+  try {
+    const body = Object.fromEntries(new FormData(form));
+    const { token, user } = await api(path, { method: 'POST', body });
+    Auth.save(token, user);
+    location.href = user.role === 'owner' ? '/dashboard.html' : '/';
+  } catch (e) { toast(e.message, true); btn.disabled = false; }
+}
+$('login').onsubmit = (e) => { e.preventDefault(); submit(e.target, '/auth/login'); };
+$('reg').onsubmit = (e) => { e.preventDefault(); submit(e.target, '/auth/register'); };
+</script></body></html>

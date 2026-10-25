@@ -1,0 +1,132 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css"><title>Dashboard – StayFinder</title></head><body>
+<header class="nav" id="nav"></header>
+<main class="wrap dash" id="root"></main>
+<footer>StayFinder · Find it. Visit it. Move in.</footer>
+<script src="/js/api.js"></script>
+<script>
+const user = Auth.user();
+const root = document.getElementById('root');
+if (!user) location.href = '/login.html';
+const when = (d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+
+/* ---------- Tenant ---------- */
+async function tenantView() {
+  root.innerHTML = '<h1>My bed requests</h1><div class="list" id="list"></div>';
+  const list = await api('/bookings/mine');
+  document.getElementById('list').innerHTML = list.length ? list.map((b) => `
+    <div class="item"><img src="${esc(b.pg ? cover(b.pg) : PLACEHOLDER)}" alt="">
+      <div class="grow"><b>${b.pg ? '<a href="/pg.html?id=' + b.pg._id + '">' + esc(b.pg.name) + '</a>' : 'Listing removed'}</b>
+        <div class="muted">${b.pg ? esc(b.pg.area) + ', ' + esc(b.pg.city) + ' · ' + money(b.pg.rent) + '/mo' : ''}</div>
+        <div class="muted">Move-in: ${when(b.moveInDate)}${b.status === 'accepted' && b.pg && b.pg.contactPhone ? ' · Call owner: ' + esc(b.pg.contactPhone) : ''}</div></div>
+      <span class="badge ${b.status}">${b.status}</span></div>`).join('')
+    : '<div class="empty"><h3>No requests yet</h3><a class="btn" href="/">Browse PGs</a></div>';
+}
+
+/* ---------- Owner ---------- */
+async function ownerView() {
+  const isAdmin = user.role === 'admin';
+  root.innerHTML = `
+    <h1>${isAdmin ? 'All listings (admin)' : 'My listings'}</h1>
+    ${isAdmin ? '' : '<h2>Bed requests</h2><div class="list" id="reqs"></div>'}
+    <h2>${isAdmin ? 'All PGs' : 'Your PGs'}</h2>
+    <input id="pgSearch" type="search" placeholder="Search by name, area or owner" aria-label="Search listings" style="max-width:360px;margin-bottom:12px">
+    <div class="list" id="pgs"></div>
+    <h2 id="formTitle">Add a new PG</h2>
+    <form class="panel" id="pgForm" enctype="multipart/form-data">
+      <div class="row">
+        <div class="field"><label>PG name</label><input name="name" required></div>
+        <div class="field"><label>City</label><input name="city" required></div>
+        <div class="field"><label>Area / locality</label><input name="area" required></div>
+      </div>
+      <div class="field"><label>Full address</label><input name="address"></div>
+      <div class="row">
+        <div class="field"><label>Rent per month (₹)</label><input name="rent" type="number" min="0" required></div>
+        <div class="field"><label>Deposit (₹)</label><input name="deposit" type="number" min="0" value="0"></div>
+        <div class="field"><label>Stay type</label><select name="gender"><option value="boys">Boys</option><option value="girls">Girls</option><option value="unisex">Unisex</option></select></div>
+        <div class="field"><label>Sharing</label><select name="sharing"><option value="1">Private</option><option value="2" selected>2-sharing</option><option value="3">3-sharing</option><option value="4">4-sharing</option></select></div>
+      </div>
+      <div class="row">
+        <div class="field"><label>Total beds</label><input name="totalBeds" type="number" min="1" required></div>
+        <div class="field"><label>Beds available now</label><input name="availableBeds" type="number" min="0" required></div>
+        <div class="field"><label>Contact phone</label><input name="contactPhone" type="tel" value="${esc(user.phone || '')}"></div>
+      </div>
+      <div class="field"><label>Amenities</label><div class="chips">${AMENITIES.map((a) => '<label class="check"><input type="checkbox" name="amenity" value="' + a + '"> ' + a + '</label>').join('')}</div></div>
+      <div class="field"><label>Description</label><textarea name="description" rows="3"></textarea></div>
+      <div class="field"><label>House rules</label><textarea name="rules" rows="2" placeholder="Gate timing, guests, notice period…"></textarea></div>
+      <div class="field" id="curWrap" hidden><label>Current photos (tick to remove)</label><div class="chips" id="curImgs"></div></div>
+      <div class="field"><label>Add photos (up to 5, JPG/PNG/WEBP, 3 MB each)</label><input name="images" id="imgs" type="file" accept="image/jpeg,image/png,image/webp" multiple></div>
+      <button class="btn gold" id="saveBtn">Publish listing</button> <button type="button" class="btn ghost" id="cancelEdit" hidden>Cancel edit</button>
+    </form>`;
+
+  let editId = null, current = [];
+  const form = document.getElementById('pgForm');
+
+  async function refresh() {
+    const [reqs, pgs] = await Promise.all([isAdmin ? [] : api('/bookings/owner'), api('/pgs/mine')]);
+    current = pgs;
+    if (!isAdmin) document.getElementById('reqs').innerHTML = reqs.length ? reqs.map((b) => `
+      <div class="item"><div class="grow"><b>${esc(b.tenant ? b.tenant.name : 'Tenant')}</b> wants a bed at <b>${esc(b.pg ? b.pg.name : 'removed PG')}</b>
+        <div class="muted">Move-in ${when(b.moveInDate)} · ${esc(b.tenant ? b.tenant.email : '')}${b.tenant && b.tenant.phone ? ' · ' + esc(b.tenant.phone) : ''}</div>
+        ${b.message ? '<div>“' + esc(b.message) + '”</div>' : ''}</div>
+        ${b.status === 'pending' ? `<div class="acts"><button class="btn sm" data-b="${b._id}" data-s="accepted">Accept</button><button class="btn sm danger" data-b="${b._id}" data-s="rejected">Reject</button></div>` : '<span class="badge ' + b.status + '">' + b.status + '</span>'}
+      </div>`).join('') : '<div class="empty">No requests yet. They will show up here.</div>';
+    renderPgs();
+  }
+  function renderPgs() {
+    const q = document.getElementById('pgSearch').value.trim().toLowerCase();
+    const sp = current.filter((p) => (p.name + ' ' + p.area + ' ' + (p.owner ? p.owner.name : '')).toLowerCase().includes(q));
+    document.getElementById('pgs').innerHTML = sp.length ? sp.map((p) => `
+      <div class="item"><img src="${esc(cover(p))}" alt="">
+        <div class="grow"><b><a href="/pg.html?id=${p._id}">${esc(p.name)}</a></b>
+          <div class="muted">${esc(p.area)}, ${esc(p.city)} · ${money(p.rent)}/mo · ${p.availableBeds}/${p.totalBeds} beds free${isAdmin && p.owner ? ' · Owner: ' + esc(p.owner.name) : ''}</div></div>
+        <div class="acts"><button class="btn sm ghost" data-edit="${p._id}">Edit</button><button class="btn sm danger" data-del="${p._id}">Delete</button></div></div>`).join('')
+      : '<div class="empty">No listings found.</div>';
+  }
+
+  root.addEventListener('click', async (e) => {
+    const t = e.target;
+    try {
+      if (t.dataset.b) { await api('/bookings/' + t.dataset.b, { method: 'PATCH', body: { status: t.dataset.s } }); toast('Request ' + t.dataset.s); refresh(); }
+      if (t.dataset.del && confirm('Delete this listing? Its reviews and requests will be removed too.')) { await api('/pgs/' + t.dataset.del, { method: 'DELETE' }); toast('Listing deleted'); refresh(); }
+      if (t.dataset.edit) {
+        const p = current.find((x) => x._id === t.dataset.edit); editId = p._id;
+        for (const k of ['name','city','area','address','rent','deposit','gender','sharing','totalBeds','availableBeds','contactPhone','description','rules']) form.elements[k].value = p[k] ?? '';
+        form.querySelectorAll('[name=amenity]').forEach((c) => c.checked = p.amenities.includes(c.value));
+        document.getElementById('curWrap').hidden = !p.images.length;
+        document.getElementById('curImgs').innerHTML = p.images.map((i) => '<label class="check"><input type="checkbox" name="rm" value="' + esc(i) + '"><img src="' + esc(i) + '" alt="" style="width:70px;height:52px;object-fit:cover;border-radius:6px"> remove</label>').join('');
+        document.getElementById('formTitle').textContent = 'Edit ' + p.name;
+        document.getElementById('saveBtn').textContent = 'Save changes';
+        document.getElementById('cancelEdit').hidden = false;
+        form.scrollIntoView({ behavior: 'smooth' });
+      }
+    } catch (er) { toast(er.message, true); }
+  });
+
+  function resetForm() { editId = null; form.reset(); document.getElementById('curWrap').hidden = true; document.getElementById('formTitle').textContent = 'Add a new PG'; document.getElementById('saveBtn').textContent = 'Publish listing'; document.getElementById('cancelEdit').hidden = true; }
+  document.getElementById('cancelEdit').onclick = resetForm;
+
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('saveBtn'); btn.disabled = true;
+    const fd = new FormData(form);
+    fd.delete('amenity');
+    fd.set('removeImages', [...form.querySelectorAll('[name=rm]:checked')].map((c) => c.value).join(','));
+    fd.delete('rm');
+    fd.set('amenities', [...form.querySelectorAll('[name=amenity]:checked')].map((c) => c.value).join(','));
+    if (!form.images.files.length) fd.delete('images');
+    if (form.images.files.length > 5) { toast('Choose at most 5 photos', true); btn.disabled = false; return; }
+    try {
+      await api(editId ? '/pgs/' + editId : '/pgs', { method: editId ? 'PUT' : 'POST', form: fd });
+      toast(editId ? 'Changes saved' : 'Listing published'); resetForm(); refresh();
+    } catch (er) { toast(er.message, true); }
+    btn.disabled = false;
+  };
+  document.getElementById('pgSearch').oninput = renderPgs;
+  refresh();
+}
+
+if (user) (['owner', 'admin'].includes(user.role) ? ownerView() : tenantView()).catch((e) => toast(e.message, true));
+</script></body></html>
