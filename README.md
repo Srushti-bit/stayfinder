@@ -68,7 +68,7 @@ cp .env.example .env        # on Windows: copy .env.example .env
 node seed.js                # creates the 500 sample PGs and demo accounts
 npm start
 ```
-Open http://localhost:5000
+Open 
 
 ### Enable transactions (optional)
 Transactions need MongoDB to run as a replica set. Add this to `mongod.cfg` and restart the MongoDB service:
